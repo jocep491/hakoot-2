@@ -1120,6 +1120,7 @@ function finish(){
  q.plays++;
  board=board.filter(b=>!(b.me&&b.q===q.id&&b.m===S.gmode));
  board.push({n:user.name,q:q.id,m:S.gmode,s:S.score,me:true});
+ window.FB&&(FB.saveQuiz(q),FB.saveScore({n:user.name,q:q.id,m:S.gmode,s:S.score}));
  S.view='results';render();
 }
 
@@ -1141,6 +1142,7 @@ function commit(){
   plays:d.plays,author:d.author,questions:d.questions.map(x=>({p:x.p,c:x.c.slice(),a:x.a}))};
  const i=quizzes.findIndex(q=>q.id===d.id);
  if(i>=0)quizzes[i]=built;else{quizzes.push(built);user.created++}
+ window.FB&&FB.saveQuiz(built);
 }
 function publish(){
  const d=S.draft;
@@ -1183,9 +1185,53 @@ document.addEventListener('click',e=>{
  else if(d.publish!==undefined)publish();
  else if(d.delQuiz!==undefined){const i=quizzes.findIndex(q=>q.id===S.draft.id);
   if(i>=0){quizzes.splice(i,1);user.created=Math.max(0,user.created-1)}
-  S.draft=null;go('lobby');toast(t('deleted'))}
+  window.FB&&FB.delQuiz(S.draft.id);S.draft=null;go('lobby');toast(t('deleted'))}
 });
 render();
+</script>
+<script type="module">
+/* ================= Firebase (Firestore) ================= */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDhgTKz1RpAFWuQxKbBDV-6tQQtVBW47sQ",
+  authDomain: "hakoot-90937.firebaseapp.com",
+  projectId: "hakoot-90937",
+  storageBucket: "hakoot-90937.firebasestorage.app",
+  messagingSenderId: "486820285104",
+  appId: "1:486820285104:web:5ae486f3d76f0fd99d4975"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const clean = o => JSON.parse(JSON.stringify(o));
+
+window.FB = {
+  saveQuiz: q => setDoc(doc(db, 'quizzes', q.id), clean(q)).catch(console.error),
+  delQuiz: id => deleteDoc(doc(db, 'quizzes', id)).catch(console.error),
+  saveScore: b => setDoc(
+    doc(db, 'scores', [b.q, b.m, b.n].join('_').replace(/\//g, '-')),
+    clean({ n: b.n, q: b.q, m: b.m, s: b.s, t: Date.now() })
+  ).catch(console.error)
+};
+
+(async () => {
+  try {
+    const qs = await getDocs(collection(db, 'quizzes'));
+    if (qs.empty) {
+      await Promise.all(quizzes.map(q => window.FB.saveQuiz(q)));   // pertama kali: isi kuis bawaan
+    } else {
+      quizzes = qs.docs.map(d => d.data());
+    }
+    const ss = await getDocs(collection(db, 'scores'));
+    ss.forEach(d => {
+      const b = d.data();
+      if (!board.some(x => x.n === b.n && x.q === b.q && x.m === b.m)) board.push({ n: b.n, q: b.q, m: b.m, s: b.s });
+    });
+    if (['login', 'lobby', 'board'].includes(S.view)) render();
+  } catch (e) { console.error('Firebase:', e); }
+})();
 </script>
 </body>
 </html>
